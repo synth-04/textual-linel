@@ -5,7 +5,7 @@ __pycache__
 
 # Env
 .env
-myvenv/
+myenv/
 venv/
 
 # macOS
