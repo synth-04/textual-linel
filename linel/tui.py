@@ -3,18 +3,10 @@ from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Label, DataTable, Static, Input
 
-class LinelApp(App):
-    CSS_PATH = "linel.tcss"
-    BINDINGS = [
-        ("m", "toggle_dark", "Toggle dark mode"),
-        ("a", "add", "Add"),
-        ("d", "delete", "Delete"),
-        ("q", "request_quit", "Quit"),  
-    ]
-    
-    def __init__(self, db):
-        super().__init__()
-        self.db = db
+class Home(Screen):
+
+    BINDINGS = [("a", "add", "Add word"),
+                ("d","delete", "Delete word")]
 
     def compose(self):
         yield Header()
@@ -35,25 +27,13 @@ class LinelApp(App):
         yield Footer()
 
     def on_mount(self):
-        self.title = "LINEL"
-        self.sub_title = "A Conlang Tool"
         self._load_words()
 
     def _load_words(self):
         words_list = self.query_one(DataTable)
-        for word_data in self.db.get_all_words():
+        for word_data in self.app.db.get_all_words():
             id, *word = word_data
             words_list.add_row(*word, key=id)
-
-
-    def action_toggle_dark(self):
-        self.dark = not self.dark
-
-    def action_request_quit(self):
-        def check_answer(accepted):
-            if accepted:
-                self.exit()
-        self.push_screen(QuestionDialog("Do you want to quit?"), check_answer)
 
     @on(Button.Pressed, "#add")
     def action_add(self):
@@ -82,6 +62,59 @@ class LinelApp(App):
             QuestionDialog(f"Do you want to delete {word}?"),
             check_answer,
         )
+
+class About(Screen):
+    def compose(self):
+        yield Header()
+        yield Static("About This App\n\nA conlang tool to manage words in your constructed language.", id="about_text")
+        yield Button("Back to Home", id="back")
+
+class LinelApp(App):
+    CSS_PATH = "linel.tcss"
+    BINDINGS = [
+        ("m", "toggle_dark", "Toggle dark mode"),
+        ("a", "add", "Add"),
+        ("d", "delete", "Delete"),
+        ("q", "request_quit", "Quit"),
+        ("h", "switch_home", "Home"),
+        ("b", "switch_about", "About"),
+    ]
+    
+    def __init__(self, db):
+        super().__init__()
+        self.db = db
+
+    def on_mount(self):
+        self.title = "LINEL"
+        self.sub_title = "A Conlang Tool"
+        self.switch_to_home()
+
+    def switch_to_home(self):
+        self.push_screen(Home())
+
+    def switch_to_about(self):
+        self.push_screen(About())
+
+    @on(Button.Pressed, "#back")
+    def return_home(self):
+        self.switch_to_home()
+
+    def action_toggle_dark(self):
+        self.dark = not self.dark
+
+    def action_request_quit(self):
+        def check_answer(accepted):
+            if accepted:
+                self.exit()
+        self.push_screen(QuestionDialog("Do you want to quit?"), check_answer)
+
+    def action_switch_home(self):
+        self.switch_to_home()
+
+    def action_switch_about(self):
+        self.switch_to_about()
+
+
 
 class QuestionDialog(Screen):
     def __init__(self, message, *args, **kwargs):
