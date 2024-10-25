@@ -1,39 +1,85 @@
+from linel.database import Database
 from textual.app import App, on
 from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Label, DataTable, Static, Input
+from textual.widgets import Button, Footer, Header, Label, DataTable, Static, Input, Select
+import pathlib, os
+
+class DatabaseSelectionScreen(Screen):
+
+    def compose(self):
+
+        database_dir = pathlib.Path(__file__).parent / "database"
+        db_files = [f for f in os.listdir(database_dir) if f.endswith(".db")]
+
+        if not db_files:
+            yield Label("No databases found in the 'database' folder.")
+            yield Button("Cancel", id="cancel")
+        else:
+            yield Label("Select a database to load:")
+            self.selection = Select.from_values(db_files)
+            yield self.selection
+
+            yield Button("Load", id="load")
+            yield Button("Cancel", id="cancel")
+
+    @on(Button.Pressed, "#load")
+    def action_load(self):
+        selected_db = self.selection.value
+    
+        if selected_db:
+            db_path = pathlib.Path(__file__).parent / "database" / selected_db
+            self.app.db_path = db_path
+            self.app.push_screen(Home(db_path=db_path))
+        else:
+            print("No database selected")
 
 class Home(Screen):
 
     BINDINGS = [("a", "add", "Add word"),
+                ("u", "modify", "Update word"),
                 ("d","delete", "Delete word")]
+
+    def __init__(self, db_path):
+        super().__init__()
+        self.db_path = db_path
 
     def compose(self):
         yield Header()
-        linel_list = DataTable(classes="Words-list")
-        linel_list.focus()
-        linel_list.add_columns("Word", "Type", "English", "Class/Declinations", "Root", "Notes")
-        linel_list.cursor_type = "row"
-        linel_list.zebra_stripes = True
+        self.linel_list = DataTable(classes="Words-list")
+        self.linel_list.focus()
+        self.linel_list.add_columns("ID","Word", "Type", "English", "Class/Declinations", "Root", "Notes")
+        self.linel_list.cursor_type = "row"
+        self.linel_list.zebra_stripes = True
         add_button = Button("Add", variant="success", id="add")
+        modify_button = Button("Modify", variant="success", id="modify")
+        delete_button = Button("Delete", variant="warning", id="delete")
         add_button.focus()
         buttons_panel = Vertical(
             add_button,
-            Button("Delete", variant="warning", id="delete"),
+            modify_button,
+            delete_button,
             Static(classes="separator"),
             classes="buttons-panel",
         )
-        yield Horizontal(linel_list, buttons_panel)
+        yield Horizontal(self.linel_list, buttons_panel)
         yield Footer()
 
     def on_mount(self):
+        self.db = Database(db_path=self.db_path)
         self._load_words()
 
     def _load_words(self):
         words_list = self.query_one(DataTable)
-        for word_data in self.app.db.get_all_words():
-            id, *word = word_data
-            words_list.add_row(*word, key=id)
+        words_list.clear()
+        words = self.db.get_all_words()
+    
+        for word_data in words:
+            word_id = word_data[0]  # Supponiamo che il primo elemento sia l'ID
+            if word_id:
+                words_list.add_row(word_id, *word_data[1:], key=str(word_id))
+            else:
+                print(f"Invalid word ID: {word_id} for word: {word_data}")
 
     @on(Button.Pressed, "#add")
     def action_add(self):
@@ -43,7 +89,38 @@ class Home(Screen):
                 id, *word = self.db.get_last_word()
                 self.query_one(DataTable).add_row(*word, key=id)
 
-        self.push_screen(InputDialog(), check_word)
+        self.app.push_screen(AddDialog(), check_word)
+
+    @on(Button.Pressed, "#modify")
+    def action_modify(self):
+        words_list = self.query_one(DataTable)
+        
+        # Recupera la chiave della riga selezionata
+        row_key, _ = words_list.coordinate_to_cell_key(words_list.cursor_coordinate)
+        
+        if not row_key:
+            print("No row selected")
+            return  # Nessuna riga selezionata
+
+        # Recupera i dati della riga selezionata
+        word_data = words_list.get_row(row_key)
+        
+        if not word_data:
+            print(f"No data found for the selected row {row_key}")
+            return
+
+        # Mostra il dialogo di modifica con i dati esistenti
+        word_id = row_key.value
+        word_record = self.db.get_word_by_id(int(word_id))
+
+        def handle_update(updated_word):
+            if updated_word:
+                self.db.update_word(word_id, updated_word)
+                self._load_words()
+        
+        # Mostra la schermata del dialogo e gestisce l'aggiornamento
+        self.app.push_screen(UpdateDialog(word_record), handle_update)
+
 
     @on(Button.Pressed, "#delete")
     def action_delete(self):
@@ -58,7 +135,7 @@ class Home(Screen):
                 words_list.remove_row(row_key)
 
         word = words_list.get_row(row_key)[0]
-        self.push_screen(
+        self.app.push_screen(
             QuestionDialog(f"Do you want to delete {word}?"),
             check_answer,
         )
@@ -68,29 +145,30 @@ class About(Screen):
         yield Header()
         yield Static("About This App\n\nA conlang tool to manage words in your constructed language.", id="about_text")
         yield Button("Back to Home", id="back")
+        yield Footer()
+
 
 class LinelApp(App):
     CSS_PATH = "linel.tcss"
     BINDINGS = [
         ("m", "toggle_dark", "Toggle dark mode"),
-        ("a", "add", "Add"),
-        ("d", "delete", "Delete"),
         ("q", "request_quit", "Quit"),
         ("h", "switch_home", "Home"),
         ("b", "switch_about", "About"),
     ]
-    
-    def __init__(self, db):
-        super().__init__()
-        self.db = db
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.db_path = None  # Inizializza db_path come None
 
     def on_mount(self):
         self.title = "LINEL"
         self.sub_title = "A Conlang Tool"
-        self.switch_to_home()
+
+        self.push_screen(DatabaseSelectionScreen())
 
     def switch_to_home(self):
-        self.push_screen(Home())
+        self.push_screen(Home(db_path=self.db_path))
 
     def switch_to_about(self):
         self.push_screen(About())
@@ -114,8 +192,6 @@ class LinelApp(App):
     def action_switch_about(self):
         self.switch_to_about()
 
-
-
 class QuestionDialog(Screen):
     def __init__(self, message, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -138,7 +214,7 @@ class QuestionDialog(Screen):
         else:
             self.dismiss(False)
 
-class InputDialog(Screen):
+class AddDialog(Screen):
     def compose(self):
         yield Grid(
             Label("Add Word", id="title"),
@@ -179,19 +255,97 @@ class InputDialog(Screen):
                 id="notes",
             ),
             Static(),
+            Button("Save", variant="success", id="save"),
             Button("Cancel", variant="warning", id="cancel"),
-            Button("Ok", variant="success", id="ok"),
+            id="input-dialog",
+        )
+    @on(Button.Pressed, '#save')
+    def save(self):
+        word = self.query_one("#word", Input).value
+        type = self.query_one("#type", Input).value
+        english = self.query_one("#english", Input).value
+        class_decl = self.query_one("#class_decl", Input).value
+        root = self.query_one("#root", Input).value
+        notes = self.query_one("#notes", Input).value
+        
+        added_word = (word, type, english, class_decl, root, notes)
+        self.dismiss(added_word)
+
+    @on(Button.Pressed, "#cancel")
+    def cancel(self):
+        self.dismiss(None)
+
+
+class UpdateDialog(Screen):
+
+    def __init__(self, word_record):
+        super().__init__()
+        self.word_record = word_record  # Passiamo i dati esistenti da modificare
+
+    def compose(self):
+        yield Grid(
+            Label("Update Word", id="title"),
+            Label("Word:", classes="label"),
+            Input(
+                value=self.word_record[1],
+                placeholder="Word",
+                classes="input",
+                id="input-word",
+            ),
+            Label("Type:", classes="label"),
+            Input(
+                value=self.word_record[2],
+                placeholder="Type",
+                classes="input",
+                id="input-type",
+            ),
+            Label("English:", classes="label"),
+            Input(
+                value=self.word_record[3],
+                placeholder="English",
+                classes="input",
+                id="input-english",
+            ),
+            Label("Class/Declination:", classes="label"),
+            Input(
+                value=self.word_record[4],
+                placeholder="Class/Declination",
+                classes="input",
+                id="input-class_decl",
+            ),
+            Label("Root:", classes="label"),
+            Input(
+                value=self.word_record[5],
+                placeholder="Root",
+                classes="input",
+                id="input-root",
+            ),
+            Label("Notes:", classes="label"),
+            Input(
+                value=self.word_record[6],
+                placeholder="Notes",
+                classes="input",
+                id="input-notes",
+            ),
+            Static(),
+            Button("Save", variant="success", id="save"),
+            Button("Cancel", variant="warning", id="cancel"),
             id="input-dialog",
         )
 
-    def on_button_pressed(self, event):
-        if event.button.id == "ok":
-            word = self.query_one("#word", Input).value
-            type = self.query_one("#type", Input).value
-            english = self.query_one("#english", Input).value
-            class_decl = self.query_one("#class_decl", Input).value
-            root = self.query_one("#root", Input).value
-            notes = self.query_one("#notes", Input).value
-            self.dismiss((word, type, english, class_decl, root, notes))
-        else:
-            self.dismiss()
+    @on(Button.Pressed, "#save")
+    def save_changes(self):
+        new_word = self.query_one("#input-word", Input).value
+        new_type = self.query_one("#input-type", Input).value
+        new_english = self.query_one("#input-english", Input).value
+        new_class_decl = self.query_one("#input-class_decl", Input).value
+        new_root = self.query_one("#input-root", Input).value
+        new_notes = self.query_one("#input-notes", Input).value
+
+        updated_word = (new_word, new_type, new_english, new_class_decl, new_root, new_notes)
+        
+        self.dismiss(updated_word)  # Chiude il dialogo e ritorna i nuovi dati
+
+    @on(Button.Pressed, "#cancel")
+    def cancel(self):
+        self.dismiss(None)

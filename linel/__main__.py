@@ -1,8 +1,7 @@
 from linel.tui import LinelApp
-from linel.database import Database
 
 def main():
-    app = LinelApp(db=Database())
+    app = LinelApp()
     app.run()
 
 if __name__ == "__main__":
