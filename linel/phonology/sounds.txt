@@ -1,0 +1,5 @@
+V=a,e,i,u
+C=p,t,d,k,f,v,s,sh,m,n,l,r
+L=tr,kt,st,nt,nd
+D=t,s,k,n
+A=a

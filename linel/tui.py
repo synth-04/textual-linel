@@ -1,11 +1,14 @@
 from linel.database import Database
-from textual.app import App, on
+from textual.app import App, on, ComposeResult
 from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Label, DataTable, Static, Input, Select
-import pathlib, os
+from textual.widgets import Button, Footer, Header, Label, DataTable, Static, Input, Select, TextArea
+import pathlib, os, random
 
 class DatabaseSelectionScreen(Screen):
+
+    def __init__(self):
+        super().__init__()
 
     def compose(self):
 
@@ -20,8 +23,14 @@ class DatabaseSelectionScreen(Screen):
             self.selection = Select.from_values(db_files)
             yield self.selection
 
+
+            yield Button("New", id="new")
             yield Button("Load", id="load")
             yield Button("Cancel", id="cancel")
+
+    @on(Button.Pressed, "#new")
+    def action_new(self):
+        self.app.push_screen(NewDatabaseScreen())        
 
     @on(Button.Pressed, "#load")
     def action_load(self):
@@ -33,6 +42,21 @@ class DatabaseSelectionScreen(Screen):
             self.app.push_screen(Home(db_path=db_path))
         else:
             print("No database selected")
+
+    @on(Button.Pressed, "#cancel")
+    def action_request_quit(self):
+        def check_answer(accepted):
+                if accepted:
+                    self.app.exit()
+        self.app.push_screen(QuestionDialog("Do you want to quit?"), check_answer)
+
+class NewDatabaseScreen(Screen):
+
+    def __init__(self):
+        super.__init__()
+
+    def compose(self):
+        ...
 
 class Home(Screen):
 
@@ -155,6 +179,7 @@ class LinelApp(App):
         ("q", "request_quit", "Quit"),
         ("h", "switch_home", "Home"),
         ("b", "switch_about", "About"),
+        ("w","switch_generator", "Word Generator")
     ]
 
     def __init__(self, *args, **kwargs):
@@ -172,6 +197,9 @@ class LinelApp(App):
 
     def switch_to_about(self):
         self.push_screen(About())
+
+    def switch_to_gen(self):
+        self.push_screen(WordGeneratorScreen())
 
     @on(Button.Pressed, "#back")
     def return_home(self):
@@ -191,6 +219,9 @@ class LinelApp(App):
 
     def action_switch_about(self):
         self.switch_to_about()
+    
+    def action_switch_generator(self):
+        self.switch_to_gen()
 
 class QuestionDialog(Screen):
     def __init__(self, message, *args, **kwargs):
@@ -349,3 +380,92 @@ class UpdateDialog(Screen):
     @on(Button.Pressed, "#cancel")
     def cancel(self):
         self.dismiss(None)
+
+class WordGeneratorScreen(Screen):
+
+    def __init__(self):
+        super().__init__()
+        self.phon = {}
+        self.syl = []
+        self.load_default_patterns()
+
+
+    def load_default_patterns(self):
+        """Carica i contenuti predefiniti dei file sounds.txt e syllables.txt."""
+        base_dir = pathlib.Path(__file__).parent / "phonology"
+        sounds_file = base_dir / "sounds.txt"
+        syllables_file = base_dir / "syllables.txt"
+
+        # Leggi sounds.txt
+        if sounds_file.exists():
+            with open(sounds_file, "r") as f:
+                self.default_sounds = f.read()  # Salva il contenuto per TextArea
+        else:
+            self.default_sounds = ""
+
+        # Leggi syllables.txt
+        if syllables_file.exists():
+            with open(syllables_file, "r") as f:
+                self.default_syllables = f.read()  # Salva il contenuto per TextArea
+        else:
+            self.default_syllables = ""
+    
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Label("Number of Words to Generate:")
+        self.num_input = Input(placeholder="Enter a number", id="num_input")
+        yield self.num_input
+
+        # Campo di testo per incollare il contenuto di sounds.txt
+        yield Label("Phonological Categories (sounds.txt):")
+        self.sounds_input = TextArea(text=self.default_sounds, id="sounds_input")
+        yield self.sounds_input
+
+        # Campo di testo per incollare il contenuto di syllables.txt
+        yield Label("Syllable Structures (syllables.txt):")
+        self.syllables_input = TextArea(text=self.default_syllables, id="syllables_input")
+        yield self.syllables_input
+
+        yield Button("Generate Words", id="generate")
+
+        # Area di testo per visualizzare le parole generate
+        self.output = TextArea(read_only=True, id="output")
+        yield Label("Generated Words:")
+        yield self.output
+
+        yield Footer()
+
+    def load_patterns(self):
+        """Carica i pattern dalle aree di testo."""
+        ph = self.sounds_input.text.splitlines()
+        syl = self.syllables_input.text.splitlines()
+
+        # Popola il dizionario `phon` con le categorie e i suoni
+        for cat in ph:
+            phrase = cat.split("=")
+            if len(phrase) == 2:
+                self.phon[phrase[0]] = phrase[1].split(",")
+
+        self.syl = syl
+
+    def generate_words(self):
+        """Genera le parole in base ai pattern."""
+        num_words = int(self.num_input.value or 10)  # Default to 10 if input is empty
+
+        words = [self.gen_word() for _ in range(num_words)]
+        self.output.text = "\n".join(words)  # Visualizza le parole generate
+
+    def gen_word(self):
+        """Genera una parola singola usando il pattern di `phon` e `syl`."""
+        structure = random.choice(self.syl)
+        sounds = [random.choice(self.phon[category]) for category in structure]
+        return "".join(sounds)
+
+    @on(Button.Pressed, "#generate")
+    def action_generate(self):
+        """Genera le parole in base ai dati inseriti."""
+        if self.sounds_input.text and self.syllables_input.text:
+            self.load_patterns()
+            self.generate_words()
+        else:
+            self.output.text = "Please provide content for both sounds and syllables."
