@@ -45,6 +45,33 @@ class Database:
         query = "SELECT * FROM words WHERE id = ?;"
         result = self._run_query(query, word_id)
         return result.fetchone()
+    
+    def query_words(self, word=None, type=None, english=None, class_decl=None, root=None):
+        query = "SELECT * FROM words"
+        where_clauses = []
+        parameters = []
+
+        if word:
+            where_clauses.append("word = ?")
+            parameters.append(word)
+        if type:
+            where_clauses.append("type = ?")
+            parameters.append(type)
+        if english:
+            where_clauses.append("english = ?")
+            parameters.append(english)
+        if class_decl:
+            where_clauses.append("class_decl = ?")
+            parameters.append(class_decl)
+        if root:
+            where_clauses.append("root = ?")
+            parameters.append(root)
+
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+
+        result = self._run_query(query, *parameters)
+        return result.fetchall()
 
     def add_word(self, word):
         self._run_query(

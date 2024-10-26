@@ -17,12 +17,12 @@ class DatabaseSelectionScreen(Screen):
 
         if not db_files:
             yield Label("No databases found in the 'database' folder.")
+            yield Button("New", id="new")
             yield Button("Cancel", id="cancel")
         else:
             yield Label("Select a database to load:")
             self.selection = Select.from_values(db_files)
             yield self.selection
-
 
             yield Button("New", id="new")
             yield Button("Load", id="load")
@@ -36,7 +36,7 @@ class DatabaseSelectionScreen(Screen):
     def action_load(self):
         selected_db = self.selection.value
     
-        if selected_db:
+        if not selected_db == Select.BLANK:
             db_path = pathlib.Path(__file__).parent / "database" / selected_db
             self.app.db_path = db_path
             self.app.push_screen(Home(db_path=db_path))
@@ -53,10 +53,31 @@ class DatabaseSelectionScreen(Screen):
 class NewDatabaseScreen(Screen):
 
     def __init__(self):
-        super.__init__()
+        super().__init__()
 
     def compose(self):
-        ...
+            yield Label("Insert the name of the new database:")
+            new_db = Input(classes="input", id="name")
+            yield new_db
+
+            
+            yield Button("Create", id="create")
+            yield Button("Cancel", id="cancel")
+
+    @on(Button.Pressed, "#create")
+    def action_load(self):
+        name_db = self.query_one("#name", Input).value + ".db"
+    
+        if name_db:
+            db_path = pathlib.Path(__file__).parent / "database" / name_db
+            self.app.db_path = db_path
+            self.app.push_screen(Home(db_path=db_path))
+        else:
+            print("No name")
+
+    @on(Button.Pressed, "#cancel")       
+    def action_cancel(self):
+        self.app.push_screen(DatabaseSelectionScreen())
 
 class Home(Screen):
 
@@ -76,12 +97,14 @@ class Home(Screen):
         self.linel_list.cursor_type = "row"
         self.linel_list.zebra_stripes = True
         add_button = Button("Add", variant="success", id="add")
-        modify_button = Button("Modify", variant="success", id="modify")
+        modify_button = Button("Update", variant="success", id="modify")
+        search_button = Button("Search", variant="success", id="search")
         delete_button = Button("Delete", variant="warning", id="delete")
         add_button.focus()
         buttons_panel = Vertical(
             add_button,
             modify_button,
+            search_button,
             delete_button,
             Static(classes="separator"),
             classes="buttons-panel",
@@ -99,7 +122,7 @@ class Home(Screen):
         words = self.db.get_all_words()
     
         for word_data in words:
-            word_id = word_data[0]  # Supponiamo che il primo elemento sia l'ID
+            word_id = word_data[0]
             if word_id:
                 words_list.add_row(word_id, *word_data[1:], key=str(word_id))
             else:
@@ -119,21 +142,18 @@ class Home(Screen):
     def action_modify(self):
         words_list = self.query_one(DataTable)
         
-        # Recupera la chiave della riga selezionata
         row_key, _ = words_list.coordinate_to_cell_key(words_list.cursor_coordinate)
         
-        if not row_key:
+        if (not row_key) or row_key==0:
             print("No row selected")
-            return  # Nessuna riga selezionata
+            return
 
-        # Recupera i dati della riga selezionata
         word_data = words_list.get_row(row_key)
         
         if not word_data:
             print(f"No data found for the selected row {row_key}")
             return
 
-        # Mostra il dialogo di modifica con i dati esistenti
         word_id = row_key.value
         word_record = self.db.get_word_by_id(int(word_id))
 
@@ -142,9 +162,11 @@ class Home(Screen):
                 self.db.update_word(word_id, updated_word)
                 self._load_words()
         
-        # Mostra la schermata del dialogo e gestisce l'aggiornamento
         self.app.push_screen(UpdateDialog(word_record), handle_update)
 
+    @on(Button.Pressed, "#search")
+    def action_search(self):
+        self.app.push_screen(QueryScreen(self.db))
 
     @on(Button.Pressed, "#delete")
     def action_delete(self):
@@ -171,7 +193,6 @@ class About(Screen):
         yield Button("Back to Home", id="back")
         yield Footer()
 
-
 class LinelApp(App):
     CSS_PATH = "linel.tcss"
     BINDINGS = [
@@ -184,7 +205,7 @@ class LinelApp(App):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.db_path = None  # Inizializza db_path come None
+        self.db_path = None
 
     def on_mount(self):
         self.title = "LINEL"
@@ -246,6 +267,10 @@ class QuestionDialog(Screen):
             self.dismiss(False)
 
 class AddDialog(Screen):
+
+    def __init__(self):
+        super().__init__()
+    
     def compose(self):
         yield Grid(
             Label("Add Word", id="title"),
@@ -287,9 +312,10 @@ class AddDialog(Screen):
             ),
             Static(),
             Button("Save", variant="success", id="save"),
-            Button("Cancel", variant="warning", id="cancel"),
+            Button("Cancel", variant="warning", id="back"),
             id="input-dialog",
-        )
+        )   
+
     @on(Button.Pressed, '#save')
     def save(self):
         word = self.query_one("#word", Input).value
@@ -302,16 +328,11 @@ class AddDialog(Screen):
         added_word = (word, type, english, class_decl, root, notes)
         self.dismiss(added_word)
 
-    @on(Button.Pressed, "#cancel")
-    def cancel(self):
-        self.dismiss(None)
-
-
 class UpdateDialog(Screen):
 
     def __init__(self, word_record):
         super().__init__()
-        self.word_record = word_record  # Passiamo i dati esistenti da modificare
+        self.word_record = word_record
 
     def compose(self):
         yield Grid(
@@ -360,7 +381,7 @@ class UpdateDialog(Screen):
             ),
             Static(),
             Button("Save", variant="success", id="save"),
-            Button("Cancel", variant="warning", id="cancel"),
+            Button("Cancel", variant="warning", id="back"),
             id="input-dialog",
         )
 
@@ -375,11 +396,82 @@ class UpdateDialog(Screen):
 
         updated_word = (new_word, new_type, new_english, new_class_decl, new_root, new_notes)
         
-        self.dismiss(updated_word)  # Chiude il dialogo e ritorna i nuovi dati
+        self.dismiss(updated_word)
 
-    @on(Button.Pressed, "#cancel")
-    def cancel(self):
-        self.dismiss(None)
+class QueryScreen(Screen):
+
+    def __init__(self, db):
+        super().__init__()
+        self.db = db
+
+    def compose(self):
+        yield Header()
+        yield Grid(
+            Label("Search", id="title"),
+            Label("Word:", classes="label"),
+            Input(
+                value=None,
+                placeholder="Word",
+                classes="input",
+                id="input-word",
+            ),
+            Label("Type:", classes="label"),
+            Input(
+                value=None,
+                placeholder="Type",
+                classes="input",
+                id="input-type",
+            ),
+            Label("English:", classes="label"),
+            Input(
+                value=None,
+                placeholder="English",
+                classes="input",
+                id="input-english",
+            ),
+            Label("Class/Declination:", classes="label"),
+            Input(
+                value=None,
+                placeholder="Class/Declination",
+                classes="input",
+                id="input-class_decl",
+            ),
+            Label("Root:", classes="label"),
+            Input(
+                value=None,
+                placeholder="Root",
+                classes="input",
+                id="input-root",
+            ),
+            Static(),
+            Button("Search", variant="success", id="search"),
+            Button("Cancel", variant="warning", id="back"),
+            id="input-dialog",
+        )
+
+        self.linel_list = DataTable(classes="Words-list")
+        self.linel_list.focus()
+        self.linel_list.add_columns("ID","Word", "Type", "English", "Class/Declinations", "Root", "Notes")
+        self.linel_list.cursor_type = "row"
+        self.linel_list.zebra_stripes = True
+
+        yield Horizontal(self.linel_list)
+
+        yield Footer()
+
+    @on(Button.Pressed, "#search")
+    def action_search(self):
+        words_list = self.query_one(DataTable)
+        words_list.clear()
+        word = self.query_one("#input-word", Input).value
+        type = self.query_one("#input-type", Input).value
+        english = self.query_one("#input-english", Input).value
+        class_decl = self.query_one("#input-class_decl", Input).value
+        root = self.query_one("#input-root", Input).value
+        words = self.db.query_words(word, type, english, class_decl, root)
+        
+        for word_data in words:
+            words_list.add_row(*word_data[0:])
 
 class WordGeneratorScreen(Screen):
 
@@ -391,22 +483,19 @@ class WordGeneratorScreen(Screen):
 
 
     def load_default_patterns(self):
-        """Carica i contenuti predefiniti dei file sounds.txt e syllables.txt."""
         base_dir = pathlib.Path(__file__).parent / "phonology"
         sounds_file = base_dir / "sounds.txt"
         syllables_file = base_dir / "syllables.txt"
 
-        # Leggi sounds.txt
         if sounds_file.exists():
             with open(sounds_file, "r") as f:
-                self.default_sounds = f.read()  # Salva il contenuto per TextArea
+                self.default_sounds = f.read()
         else:
             self.default_sounds = ""
 
-        # Leggi syllables.txt
         if syllables_file.exists():
             with open(syllables_file, "r") as f:
-                self.default_syllables = f.read()  # Salva il contenuto per TextArea
+                self.default_syllables = f.read()
         else:
             self.default_syllables = ""
     
@@ -416,19 +505,16 @@ class WordGeneratorScreen(Screen):
         self.num_input = Input(placeholder="Enter a number", id="num_input")
         yield self.num_input
 
-        # Campo di testo per incollare il contenuto di sounds.txt
         yield Label("Phonological Categories (sounds.txt):")
         self.sounds_input = TextArea(text=self.default_sounds, id="sounds_input")
         yield self.sounds_input
 
-        # Campo di testo per incollare il contenuto di syllables.txt
         yield Label("Syllable Structures (syllables.txt):")
         self.syllables_input = TextArea(text=self.default_syllables, id="syllables_input")
         yield self.syllables_input
 
         yield Button("Generate Words", id="generate")
 
-        # Area di testo per visualizzare le parole generate
         self.output = TextArea(read_only=True, id="output")
         yield Label("Generated Words:")
         yield self.output
@@ -436,11 +522,9 @@ class WordGeneratorScreen(Screen):
         yield Footer()
 
     def load_patterns(self):
-        """Carica i pattern dalle aree di testo."""
         ph = self.sounds_input.text.splitlines()
         syl = self.syllables_input.text.splitlines()
 
-        # Popola il dizionario `phon` con le categorie e i suoni
         for cat in ph:
             phrase = cat.split("=")
             if len(phrase) == 2:
@@ -449,21 +533,18 @@ class WordGeneratorScreen(Screen):
         self.syl = syl
 
     def generate_words(self):
-        """Genera le parole in base ai pattern."""
-        num_words = int(self.num_input.value or 10)  # Default to 10 if input is empty
+        num_words = int(self.num_input.value or 10)
 
         words = [self.gen_word() for _ in range(num_words)]
-        self.output.text = "\n".join(words)  # Visualizza le parole generate
+        self.output.text = "\n".join(words)
 
     def gen_word(self):
-        """Genera una parola singola usando il pattern di `phon` e `syl`."""
         structure = random.choice(self.syl)
         sounds = [random.choice(self.phon[category]) for category in structure]
         return "".join(sounds)
 
     @on(Button.Pressed, "#generate")
     def action_generate(self):
-        """Genera le parole in base ai dati inseriti."""
         if self.sounds_input.text and self.syllables_input.text:
             self.load_patterns()
             self.generate_words()
