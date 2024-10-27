@@ -3,7 +3,7 @@ from textual.app import App, on, ComposeResult
 from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Label, DataTable, Static, Input, Select, TextArea
-import pathlib, os, random
+import pathlib, os, random, csv
 
 class DatabaseSelectionScreen(Screen):
 
@@ -83,6 +83,8 @@ class Home(Screen):
 
     BINDINGS = [("a", "add", "Add word"),
                 ("u", "modify", "Update word"),
+                ("s", "search", "Search"),
+                ("c", "upload_csv", "Upload csv"),
                 ("d","delete", "Delete word")]
 
     def __init__(self, db_path):
@@ -99,12 +101,14 @@ class Home(Screen):
         add_button = Button("Add", variant="success", id="add")
         modify_button = Button("Update", variant="success", id="modify")
         search_button = Button("Search", variant="success", id="search")
+        upload_csv_button = Button("Upload CSV", variant = "success", id = "upload_csv")
         delete_button = Button("Delete", variant="warning", id="delete")
         add_button.focus()
         buttons_panel = Vertical(
             add_button,
             modify_button,
             search_button,
+            upload_csv_button,
             delete_button,
             Static(classes="separator"),
             classes="buttons-panel",
@@ -167,6 +171,10 @@ class Home(Screen):
     @on(Button.Pressed, "#search")
     def action_search(self):
         self.app.push_screen(QueryScreen(self.db))
+
+    @on(Button.Pressed, "#upload_csv")
+    def action_upload_csv(self):
+        self.app.push_screen(CSVSelectionScreen(self.db))
 
     @on(Button.Pressed, "#delete")
     def action_delete(self):
@@ -250,12 +258,13 @@ class QuestionDialog(Screen):
         self.message = message
 
     def compose(self):
+        yes_button = Button("Yes", variant = "error", id="yes")
         no_button = Button("No", variant="primary", id="no")
-        no_button.focus()
+        yes_button.focus()
 
         yield Grid(
             Label(self.message, id="question"),
-            Button("Yes", variant="error", id="yes"),
+            yes_button,
             no_button,
             id="question-dialog",
         )
@@ -459,6 +468,7 @@ class QueryScreen(Screen):
 
         yield Footer()
 
+        
     @on(Button.Pressed, "#search")
     def action_search(self):
         words_list = self.query_one(DataTable)
@@ -472,6 +482,54 @@ class QueryScreen(Screen):
         
         for word_data in words:
             words_list.add_row(*word_data[0:])
+
+class CSVSelectionScreen(Screen):
+
+    def __init__(self, db):
+        super().__init__()
+        self.db = db
+
+    def compose(self):
+
+        csv_dir = pathlib.Path(__file__).parent / "database"
+        csv_files = [f for f in os.listdir(csv_dir) if f.endswith(".csv")]
+
+        if not csv_files:
+            yield Label("No CSV found in the 'database' folder.")
+            yield Button("Cancel", id="cancel")
+        else:
+            yield Label("Select a csv to load:")
+            self.selection = Select.from_values(csv_files)
+            yield self.selection
+
+            yield Button("Load", id="load")
+            yield Button("Cancel", id="cancel")     
+
+    @on(Button.Pressed, "#load")
+    def action_load(self):
+        selected_csv = self.selection.value
+    
+        if not selected_csv == Select.BLANK:
+            csv_path = pathlib.Path(__file__).parent / "database" / selected_csv
+            with open(csv_path, newline='') as csvfile:
+                reader = csv.DictReader(csvfile)
+                records = [row for row in reader]
+
+                for record in records:
+                    word = record.get("word")
+                    type = record.get("type")
+                    english = record.get("english")
+                    class_decl = record.get("class_decl")
+                    root = record.get("root")
+                    notes = record.get("notes")
+
+                    added_word = (word, type, english, class_decl, root, notes)
+                    self.db.add_word(added_word)
+
+            self.app.switch_to_home()
+        else:
+            print("No CSV selected")
+
 
 class WordGeneratorScreen(Screen):
 
