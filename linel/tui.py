@@ -36,10 +36,10 @@ class DatabaseSelectionScreen(Screen):
     def action_load(self):
         selected_db = self.selection.value
     
-        if not selected_db == Select.BLANK:
+        if selected_db != Select.BLANK:
             db_path = pathlib.Path(__file__).parent / "database" / selected_db
-            self.app.db_path = db_path
-            self.app.push_screen(Home(db_path=db_path))
+            self.app.set_database(db_path)
+            self.app.push_screen(Home())
         else:
             print("No database selected")
 
@@ -70,8 +70,8 @@ class NewDatabaseScreen(Screen):
     
         if name_db:
             db_path = pathlib.Path(__file__).parent / "database" / name_db
-            self.app.db_path = db_path
-            self.app.push_screen(Home(db_path=db_path))
+            self.app.set_database(db_path)
+            self.app.push_screen(Home())
         else:
             print("No name")
 
@@ -87,9 +87,8 @@ class Home(Screen):
                 ("c", "upload_csv", "Upload csv"),
                 ("d","delete", "Delete word")]
 
-    def __init__(self, db_path):
+    def __init__(self):
         super().__init__()
-        self.db_path = db_path
 
     def compose(self):
         yield Header()
@@ -117,7 +116,7 @@ class Home(Screen):
         yield Footer()
 
     def on_mount(self):
-        self.db = Database(db_path=self.db_path)
+        self.db = self.app.db
         self._load_words()
 
     def _load_words(self):
@@ -137,21 +136,20 @@ class Home(Screen):
         def check_word(word_data):
             if word_data:
                 self.db.add_word(word_data)
-                id, *word = self.db.get_last_word()
-                self.query_one(DataTable).add_row(*word, key=id)
+                self._load_words()
 
         self.app.push_screen(AddDialog(), check_word)
 
     @on(Button.Pressed, "#modify")
     def action_modify(self):
         words_list = self.query_one(DataTable)
-        
-        row_key, _ = words_list.coordinate_to_cell_key(words_list.cursor_coordinate)
-        
-        if (not row_key) or row_key==0:
+
+        if words_list.cursor_coordinate.row == 0:
             print("No row selected")
             return
-
+        
+        row_key, _ = words_list.coordinate_to_cell_key(words_list.cursor_coordinate)
+            
         word_data = words_list.get_row(row_key)
         
         if not word_data:
@@ -179,19 +177,22 @@ class Home(Screen):
     @on(Button.Pressed, "#delete")
     def action_delete(self):
         words_list = self.query_one(DataTable)
-        row_key, _ = words_list.coordinate_to_cell_key(
-            words_list.cursor_coordinate
-        )
+
+        if words_list.cursor_coordinate.row == 0:
+            print("No row selected")
+            return
+        
+        row_key, _ = words_list.coordinate_to_cell_key(words_list.cursor_coordinate)
 
         def check_answer(accepted):
-            if accepted and row_key:
+            if accepted:
                 self.db.delete_word(id=row_key.value)
                 words_list.remove_row(row_key)
 
         word = words_list.get_row(row_key)[0]
         self.app.push_screen(
             QuestionDialog(f"Do you want to delete {word}?"),
-            check_answer,
+                check_answer,
         )
 
 class About(Screen):
@@ -213,7 +214,10 @@ class LinelApp(App):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.db_path = None
+        self.db = None
+
+    def set_database(self, db_path):
+        self.db = Database(db_path)
 
     def on_mount(self):
         self.title = "LINEL"
@@ -503,7 +507,7 @@ class CSVSelectionScreen(Screen):
             yield self.selection
 
             yield Button("Load", id="load")
-            yield Button("Cancel", id="cancel")     
+            yield Button("Cancel", id="back")     
 
     @on(Button.Pressed, "#load")
     def action_load(self):
