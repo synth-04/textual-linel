@@ -1,12 +1,12 @@
 # Python
 *.pyc
 *~
-__pycache__
+__pycache__/
 
 # Env
 .env
-/myenv/
-venv/
+myenv/
+database/
 
 # macOS
 ._*
