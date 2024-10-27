@@ -144,7 +144,7 @@ class Home(Screen):
     def action_modify(self):
         words_list = self.query_one(DataTable)
 
-        if words_list.cursor_coordinate.row == 0:
+        if words_list.cursor_coordinate == (0,0):
             print("No row selected")
             return
         
@@ -178,18 +178,19 @@ class Home(Screen):
     def action_delete(self):
         words_list = self.query_one(DataTable)
 
-        if words_list.cursor_coordinate.row == 0:
+        if words_list.cursor_coordinate == (0,0):
             print("No row selected")
             return
         
         row_key, _ = words_list.coordinate_to_cell_key(words_list.cursor_coordinate)
+
 
         def check_answer(accepted):
             if accepted:
                 self.db.delete_word(id=row_key.value)
                 words_list.remove_row(row_key)
 
-        word = words_list.get_row(row_key)[0]
+        word = words_list.get_row(row_key)[1]
         self.app.push_screen(
             QuestionDialog(f"Do you want to delete {word}?"),
                 check_answer,
@@ -226,7 +227,7 @@ class LinelApp(App):
         self.push_screen(DatabaseSelectionScreen())
 
     def switch_to_home(self):
-        self.push_screen(Home(db_path=self.db_path))
+        self.push_screen(Home())
 
     def switch_to_about(self):
         self.push_screen(About())
