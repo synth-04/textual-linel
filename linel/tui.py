@@ -2,8 +2,19 @@ from linel.database import Database
 from textual.app import App, on, ComposeResult
 from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Label, DataTable, Static, Input, Select, TextArea
-import pathlib, os, random, csv
+from textual.widgets import (
+    Button, 
+    Footer, 
+    Header, 
+    Label, 
+    DataTable, 
+    Static, 
+    Input, 
+    Select, 
+    TextArea
+)
+import pathlib, os, csv
+import random
 
 class DatabaseSelectionScreen(Screen):
 
@@ -15,10 +26,12 @@ class DatabaseSelectionScreen(Screen):
         database_dir = pathlib.Path(__file__).parent / "database"
         db_files = [f for f in os.listdir(database_dir) if f.endswith(".db")]
 
+        yield Header()
+
         if not db_files:
             yield Label("No databases found in the 'database' folder.")
             yield Button("New", id="new")
-            yield Button("Cancel", id="cancel")
+            
         else:
             yield Label("Select a database to load:")
             self.selection = Select.from_values(db_files)
@@ -26,7 +39,7 @@ class DatabaseSelectionScreen(Screen):
 
             yield Button("New", id="new")
             yield Button("Load", id="load")
-            yield Button("Cancel", id="cancel")
+        yield Button("Cancel", id="cancel")
 
     @on(Button.Pressed, "#new")
     def action_new(self):
@@ -56,6 +69,7 @@ class NewDatabaseScreen(Screen):
         super().__init__()
 
     def compose(self):
+            yield Header()
             yield Label("Insert the name of the new database:")
             new_db = Input(classes="input", id="name")
             yield new_db
@@ -223,7 +237,6 @@ class LinelApp(App):
     def on_mount(self):
         self.title = "LINEL"
         self.sub_title = "A Conlang Tool"
-
         self.push_screen(DatabaseSelectionScreen())
 
     def switch_to_home(self):
